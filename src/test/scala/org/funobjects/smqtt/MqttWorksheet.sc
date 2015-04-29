@@ -15,10 +15,10 @@ case class MyControlPacket(
 
 object MyControlPacket {
   implicit def codec: Codec[MyControlPacket] =
-    (uint4 :: uint4 :: variableSizeBytes(VariableInt4.intCodec, bytes)).as[MyControlPacket]
+    (uint4 :: uint4 :: variableSizeBytes(VariableInt28.intCodec, bytes)).as[MyControlPacket]
 }
 
-val controlPacket = uint4 :: uint4 :: variableSizeBytes(VariableInt4.intCodec, bytes)
+val controlPacket = uint4 :: uint4 :: variableSizeBytes(VariableInt28.intCodec, bytes)
 controlPacket.encode( 3 :: 7 :: hex"01020304" :: HNil)
 controlPacket.decode(hex"370401020304".bits)
 val cp2 = Codec[MyControlPacket]
@@ -27,8 +27,8 @@ cp2.decode(hex"370401020304".bits).require.value
 val vstring = variableSizeBytes(uint16, utf8)
 val combo = cp2.encode(MyControlPacket(3,7,vstring.encode("hello").require.bytes))
 
+import MqttCodecs._
 
-import org.funobjects.smqtt._
 ConnectPacket.ConnectFlags.codec.encode(ConnectPacket.ConnectFlags(false, false, false, 0, false, false))
 ConnectPacket.ConnectFlags.codec.decode(hex"26".bits).require.value
 
@@ -66,10 +66,9 @@ val connectBits = hex"""
   """.bits
 
 
-
 val pingReqBits = hex"c000"
 val pingRespBits = hex"d000"
 val x = 40
 val s = f"$x%x"
 
-ConnectPacket.codec.decode(connectBits).require.value
+implicitly[Codec[ControlPacket]].decode(connectBits).require.value

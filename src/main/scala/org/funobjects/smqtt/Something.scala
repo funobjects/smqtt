@@ -1,15 +1,14 @@
 package org.funobjects.smqtt
 
-import java.nio.charset.Charset
-
 import scodec.Codec
 import scodec.codecs._
+import shapeless._
+import shapeless.syntax.singleton._
 
 /**
  * Created by rgf on 4/13/15.
  */
 object SomethingProto {
-  implicit val charSet = Charset.forName("UTF-8")
 
   sealed trait Something
   object Something {
@@ -18,7 +17,7 @@ object SomethingProto {
 
   case class GreenThing(shade: String) extends Something
   object GreenThing {
-    implicit val codec: Codec[GreenThing] = string.as[GreenThing]
+    implicit val codec: Codec[GreenThing] = utf8.as[GreenThing]
     implicit val discriminator: Discriminator[Something, GreenThing, Int] = Discriminator(1)
   }
 
@@ -28,5 +27,16 @@ object SomethingProto {
     implicit val discriminator: Discriminator[Something, SoftThing, Int] = Discriminator(2)
   }
 
-  def somethingCodec = Codec.coproduct[Something].discriminatedBy(uint8).auto
+  case class NullThing() extends Something
+  object NullThing {
+    implicit val codec: Codec[NullThing] = VariableInt28.intCodec.unit(0).hlist.dropUnits.as[NullThing]
+    implicit val discriminator: Discriminator[Something, NullThing, Int] = Discriminator(3)
+  }
+
+  implicit def somethingCodec: Codec[Something] = Codec.coproduct[Something].discriminatedBy(uint8).auto
+//  def somethingCodec = Codec.coproduct[Something].discriminatedBy(uint8).using(
+//    'GreenThing ->> 1 :: 'SoftThing ->> 2 :: HNil)
 }
+
+
+

@@ -11,7 +11,7 @@ import scodec.bits._
  */
 class VariableIntSpec extends FlatSpec with Matchers
 {
-  val codec = new VariableInt4Codec
+  val codec = new VariableInt28Codec
 
   "VariableInt4" should "have consistent and correct encode and decode" in {
 
@@ -27,14 +27,14 @@ class VariableIntSpec extends FlatSpec with Matchers
   }
 
   def check(n: Int, bytes: ByteVector): Unit = {
-    val attempt = codec.encode(VariableInt4(n))
+    val attempt = codec.encode(VariableInt28(n))
     attempt shouldBe an [Attempt.Successful[_]]
     inside (attempt) {
       case Attempt.Successful(bits: BitVector) =>
         bits.bytes shouldBe bytes
 
         codec.decode(bytes.bits) match {
-          case Attempt.Successful(DecodeResult(VariableInt4(decoded), _)) => decoded shouldBe n
+          case Attempt.Successful(DecodeResult(VariableInt28(decoded), _)) => decoded shouldBe n
           case Attempt.Failure(_) => fail("unable decode after encoding")
         }
 
@@ -43,9 +43,9 @@ class VariableIntSpec extends FlatSpec with Matchers
   }
 
   it should "throw an exception when for values that are too large or too small" in {
-    an [IllegalArgumentException] should be thrownBy VariableInt4(268435456)
-    an [IllegalArgumentException] should be thrownBy VariableInt4(Integer.MAX_VALUE)
-    an [IllegalArgumentException] should be thrownBy VariableInt4(-1)
-    an [IllegalArgumentException] should be thrownBy VariableInt4(Integer.MIN_VALUE)
+    an [IllegalArgumentException] should be thrownBy VariableInt28(268435456)
+    an [IllegalArgumentException] should be thrownBy VariableInt28(Integer.MAX_VALUE)
+    an [IllegalArgumentException] should be thrownBy VariableInt28(-1)
+    an [IllegalArgumentException] should be thrownBy VariableInt28(Integer.MIN_VALUE)
   }
 }

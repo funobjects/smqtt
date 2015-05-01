@@ -1,18 +1,13 @@
 package org.funobjects.smqtt
 
-import scodec.Err.General
 import scodec._
 import scodec.bits._
 import scodec.codecs._
-import shapeless.HNil
-
-import scala.annotation.tailrec
-
 
 /**
  * Simple MQTT Model
  */
-object MqttCodecs {
+object MqttCodec {
 
   val vstring = variableSizeBytes(uint16, utf8)
   val vint28 = VariableInt28.intCodec
@@ -20,7 +15,10 @@ object MqttCodecs {
 
   def mqttPacketType(n: Int) = BitVector.fromInt(n, 4)
 
+  def apply = mqttCodec
+
   sealed trait ControlPacket
+
   object ControlPacket {
     implicit val discriminated: Discriminated[ControlPacket, BitVector] = Discriminated(codecs.bits(4))
   }
@@ -71,7 +69,7 @@ object MqttCodecs {
             ("password" | conditional(cf.hasPassword, vbytes)))))).dropUnits.as[ConnectPacket]
   }
 
-  case class ConnAckPacket(sessionPresent: Boolean, ret: Int) extends ControlPacket
+  case class ConnAckPacket(session: Boolean, ret: Int) extends ControlPacket
   object ConnAckPacket {
     val packetType = mqttPacketType(0x2)
     val packetFlags = bin"0000"

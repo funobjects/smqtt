@@ -18,6 +18,7 @@ libraryDependencies ++= {
     val paho        = "1.0.2"
     val scalatest   = "2.2.4"
     val scalactic   = "2.2.4"
+    val scalacheck  = "1.12.2"
     val scalaXml    = "1.0.3"
     val scodec      = "1.7.1"
   }
@@ -27,6 +28,7 @@ libraryDependencies ++= {
     "org.scalactic"           %% "scalactic"                          % v.scalactic   withSources(),
     "com.typesafe.akka"       %% "akka-testkit"                       % v.akka        % "test" withSources(),
     "org.eclipse.paho"        %  "org.eclipse.paho.client.mqttv3"     % v.paho        % "test",
+    "org.scalacheck"          %% "scalacheck"                         % v.scalacheck  % "test",
     "org.scalatest"           %% "scalatest"                          % v.scalatest   % "test" withSources()
   )
 }

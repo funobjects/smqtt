@@ -1,5 +1,5 @@
 import org.funobjects.smqtt._
-import org.funobjects.smqtt.MqttCodecs._
+import org.funobjects.smqtt.MqttCodec._
 import org.funobjects.smqtt.SomethingProto._
 import org.scalatest._
 import org.scalatest.Matchers._

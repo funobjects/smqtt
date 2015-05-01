@@ -42,7 +42,7 @@ class VariableIntSpec extends FlatSpec with Matchers
     }
   }
 
-  it should "throw an exception when for values that are too large or too small" in {
+  it should "throw an exception for values that are too large or too small" in {
     an [IllegalArgumentException] should be thrownBy VariableInt28(268435456)
     an [IllegalArgumentException] should be thrownBy VariableInt28(Integer.MAX_VALUE)
     an [IllegalArgumentException] should be thrownBy VariableInt28(-1)

@@ -5,6 +5,7 @@ import org.funobjects.smqtt.SomethingProto._
 import org.scalatest._
 import org.scalatest.prop.PropertyChecks
 import scodec.Attempt.Successful
+import scodec.Err.InsufficientBits
 
 import shapeless._
 
@@ -47,17 +48,14 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
       mqttCodec.encode(msg).require shouldBe bits
       mqttCodec.decode(bits).require.value shouldBe msg
 
-      // note: decode can thow IndexOutOfBoundsException or IllegalArgumentException
-      // depending on where the short packet is discovered (i.e. which codec)
-      try {
-        codec.decode(bits.drop(4).dropRight(8)).require
-      } catch {
-        case ex: IndexOutOfBoundsException =>
-        case ex: IllegalArgumentException =>
-        case ex: Exception => fail("Unexpected exception from decode of short packet.")
+      // make sure short packets return the right failure
+      codec.decode(bits.drop(4).dropRight(8)) match {
+        case Attempt.Successful(_) => fail("Short packet should have failed decode, but succeeded instead.")
+        case Attempt.Failure(InsufficientBits(_,_,_)) => // "Yes, we have no bits."
+        case Attempt.Failure(_) => fail("Short packet failed with error other than InsufficientBits")
       }
 
-//      // long packet should be OK, but return the correct remaining length
+      // long packet should be OK, but return the correct remaining length
       codec.decode(bits.drop(4) ++ hex"0102".bits).require match {
         case DecodeResult(pkt, remaining) =>
           pkt shouldBe msg
@@ -140,11 +138,11 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
       import PublishPacket.PublishFlags
 
       val allFlags = for (
-        dup <- List(true, false);
         qos <- 0 to 2;
-        retain <- List(true, false)) yield PublishFlags(dup, qos, retain)
+        dup <- List(true, false);
+        retain <- List(true, false) if !(dup & qos == 0)) yield PublishFlags(dup, qos, retain)
 
-      def cflagBits(flags: PublishFlags) = {
+      def pflagBits(flags: PublishFlags) = {
         BitVector.bit(flags.dup) ++ BitVector.fromInt(flags.qos, 2) ++ BitVector.bit(flags.retain)
       }
 
@@ -166,15 +164,25 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
 
         val bits =
           BitVector.fromInt(3, 4) ++
-          cflagBits(flags) ++
+          pflagBits(flags) ++
           BitVector.fromInt(len, 8) ++
           topicBits(topic) ++
           (if (pidLen > 0) hex"aabb".bits else BitVector.empty) ++
           payload.bits
 
-        println(s"<$bits> $msg")
+        //println(s"<$bits> $msg")
 
         checkEncodeDecode(PublishPacket.codec, msg, bits)
+
+        val badBits =
+          BitVector.fromInt(3, 4) ++
+            (pflagBits(flags) or bin"1") ++
+            BitVector.fromInt(len, 8) ++
+            topicBits(topic) ++
+            (if (pidLen > 0) hex"aabb".bits else BitVector.empty) ++
+            payload.bits
+
+        PublishPacket.codec.decode(badBits.drop(4)) shouldBe an [Attempt.Failure]
       }
 
       // TODO: check UTF codes disallowed in spec
@@ -241,6 +249,7 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
       mqttCodec.encode(pingRespMessage).require shouldBe pingRespBits
       mqttCodec.decode(pingRespBits).require.value shouldBe pingRespMessage
     }
+
   }
 }
 
@@ -280,8 +289,8 @@ object MqttFixtures {
   val connectBitsBadLen = connectBits.dropRight(8)
 
   val connectMessage = ConnectPacket(
-    protoName = "MQTT",
-    protoLevel = 4,
+    "MQTT",
+    4,
     flags = ConnectPacket.ConnectFlags(true,true,false,0,true,true),
     keepAlive = 0,
     clientId = "clientid",

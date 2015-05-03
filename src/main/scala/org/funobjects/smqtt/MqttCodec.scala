@@ -1,8 +1,13 @@
 package org.funobjects.smqtt
 
+import scodec.Err.General
 import scodec._
 import scodec.bits._
 import scodec.codecs._
+import shapeless.HNil
+
+import scala.annotation.tailrec
+
 
 /**
  * Simple MQTT Model
@@ -17,7 +22,25 @@ object MqttCodec {
 
   def apply = mqttCodec
 
-  sealed trait ControlPacket
+  // filter for UTF "non-characters" and control characters
+  def badUtf(cp: Int): Boolean = { cp >= 1 && cp <= 0x1f || (cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xffff) == 0xffff }
+
+  def badUtfForTopic = ???
+  def badUtfForFilter = ???
+
+
+  case class MqttErr(protoRef: String, msg: String, context: List[String]) extends Err {
+    def this(protoRef: String, msg: String) = this(protoRef, msg, Nil)
+    override def message: String = s"$protoRef: $msg"
+    override def pushContext(ctx: String) = copy(context = ctx :: context)
+  }
+  object MqttErr {
+    def apply(protoRef: String, msg: String): MqttErr = apply(protoRef, msg, Nil)
+  }
+
+  sealed trait ControlPacket {
+    def validate: Attempt[_] = Attempt.Successful(this)
+  }
 
   object ControlPacket {
     implicit val discriminated: Discriminated[ControlPacket, BitVector] = Discriminated(codecs.bits(4))
@@ -32,7 +55,27 @@ object MqttCodec {
     willTopic: Option[String],
     willMessage: Option[ByteVector],
     username: Option[String],
-    password: Option[ByteVector]) extends ControlPacket
+    password: Option[ByteVector]) extends ControlPacket {
+
+    override def validate = this match {
+      // note: since unsupported protocol level requires an application level response,
+      // it is not checked here
+
+      case ConnectPacket(name, _, _, _, _, _, _, _, _) if name != "MQTT" =>
+        Attempt.Failure(MqttErr("[MQTT-3.1.2-1]", s"Unsupported protocol ($name)."))
+
+      case ConnectPacket(_, _, f, _, _, _, _, _, _) if !f.willFlag && (f.willQos != 0) =>
+        Attempt.Failure(MqttErr("MQTT-3.1.2-13]", s"Inconsistent willFlag and willQos values."))
+
+      case ConnectPacket(_, _, f, _, _, _, _, _, _) if !f.willFlag && f.willRetain =>
+        Attempt.Failure(MqttErr("MQTT-3.1.2-15]", s"Inconsistent willFlag and willRetain values."))
+
+      case ConnectPacket(_, _, f, _, _, wTopic, _, _, _) if wTopic.isDefined && !f.willFlag =>
+        Attempt.Failure(MqttErr("[MQTT-3.1.3-10]", s"Inconsistent willFlag and willTopic values."))
+
+      case pkt: ConnectPacket => Attempt.successful(pkt)
+    }
+  }
 
   object ConnectPacket {
     val packetType = mqttPacketType(1)
@@ -66,7 +109,10 @@ object MqttCodec {
             ("willTopic" | conditional(cf.willFlag, vstring)) ::
             ("willMessage" | conditional(cf.willFlag, vbytes)) ::
             ("username" | conditional(cf.hasUserName, vstring)) ::
-            ("password" | conditional(cf.hasPassword, vbytes)))))).dropUnits.as[ConnectPacket]
+            ("password" | conditional(cf.hasPassword, vbytes))))))
+      .dropUnits
+      .as[ConnectPacket]
+      .exmap(conn => conn.validate, pkt => Attempt.Successful(pkt))
   }
 
   case class ConnAckPacket(session: Boolean, ret: Int) extends ControlPacket
@@ -78,7 +124,25 @@ object MqttCodec {
     implicit val codec: Codec[ConnAckPacket] = (constant(packetFlags) :: variableSizeBytes(vint28, constant(BitVector.low(7)) :~>:  bool :: uint8)).dropUnits.as[ConnAckPacket]
   }
 
-  case class PublishPacket(flags: PublishPacket.PublishFlags, topic: String, packetId: Option[Int], payload: ByteVector) extends ControlPacket
+  case class PublishPacket(
+    flags: PublishPacket.PublishFlags,
+    topic: String,
+    packetId: Option[Int],
+    payload: ByteVector) extends ControlPacket {
+
+    override def validate = this match {
+      case PublishPacket(f, _, _, _) if flags.qos == 3 =>
+        Attempt.Failure(MqttErr("[MQTT-3.3.1-4]", s"Invalid QoS (${flags.qos}})"))
+
+      case PublishPacket(f, _, _, _) if flags.qos == 0 && flags.dup =>
+        Attempt.Failure(MqttErr("[MQTT-3.3.1-2]", s"Dup flag set with QoS 0."))
+
+      case PublishPacket(f, _, pid, _) if f.qos == 0 && pid.isDefined =>
+        Attempt.Failure(MqttErr("[MQTT-2.3.1-5]", s"Packet ID present with QoS 0."))
+
+      case pkt: PublishPacket => Attempt.successful(pkt)
+    }
+  }
   object PublishPacket {
     val packetType = mqttPacketType(0x3)
 
@@ -97,7 +161,9 @@ object MqttCodec {
         variableSizeBytes(vint28,
           ("topic" | vstring ) ::
           ("packetId" | conditional(hdr.packetIdPresent, uint16)) ::
-          ("payload" | bytes)))).as[PublishPacket]
+          ("payload" | bytes))))
+      .as[PublishPacket]
+      .exmap(pub => pub.validate, pkt => Attempt.successful(pkt))
   }
 
   case class PubAckPacket(packetId: Int) extends ControlPacket

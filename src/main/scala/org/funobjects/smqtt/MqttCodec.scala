@@ -65,10 +65,10 @@ object MqttCodec {
         Attempt.Failure(MqttErr("[MQTT-3.1.2-1]", s"Unsupported protocol ($name)."))
 
       case ConnectPacket(_, _, f, _, _, _, _, _, _) if !f.willFlag && (f.willQos != 0) =>
-        Attempt.Failure(MqttErr("MQTT-3.1.2-13]", s"Inconsistent willFlag and willQos values."))
+        Attempt.Failure(MqttErr("[MQTT-3.1.2-13]", s"Inconsistent willFlag and willQos values."))
 
       case ConnectPacket(_, _, f, _, _, _, _, _, _) if !f.willFlag && f.willRetain =>
-        Attempt.Failure(MqttErr("MQTT-3.1.2-15]", s"Inconsistent willFlag and willRetain values."))
+        Attempt.Failure(MqttErr("[MQTT-3.1.2-15]", s"Inconsistent willFlag and willRetain values."))
 
       case ConnectPacket(_, _, f, _, _, wTopic, _, _, _) if wTopic.isDefined && !f.willFlag =>
         Attempt.Failure(MqttErr("[MQTT-3.1.3-10]", s"Inconsistent willFlag and willTopic values."))

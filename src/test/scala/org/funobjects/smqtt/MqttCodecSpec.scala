@@ -95,30 +95,6 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
         checkEncodeDecode(ConnAckPacket.codec, ConnAckPacket(session = sess, ret), connAckBits(sess, ret))
       }
 
-      // Connection Acknowledgement
-//      val connAckBitsNormal =
-//      val connAckNormal =
-//      checkEncodeDecode(ConnAckPacket.codec, ConnAckPacket(session = false, 0), connAckBitsNormal)
-//
-//      val connAckBitsSessionPresent = hex"20 02 01 00".bits
-//      val connAckSessionPresent = ConnAckPacket(session = true, 0)
-//      checkEncodeDecode(ConnAckPacket.codec, ConnAckPacket(session = false, 0), connAckBitsNormal)
-//
-//
-//      val connAckBitsReturnMin = hex"20 02 00 00".bits
-//      val connAckBitsReturnMax = hex"20 02 00 05".bits
-//      val connAckBitsBadReturn = hex"20 02 00 09".bits
-//      val connAckBitsBadFlag = hex"20 02 07 00".bits
-//
-//      val connAckReturnMin = ConnAckPacket(session = true, 0)
-//      val connAckReturnMax = ConnAckPacket(session = true, 0)
-//
-//      ConnAckPacket.codec.encode(connAckNormal).require shouldBe connAckBitsNormal.drop(4)
-//      ConnAckPacket.codec.decode(connAckBitsNormal.drop(4)).require.value shouldBe connAckNormal
-//
-//      ConnAckPacket.codec.encode(connAckSessionPresent).require shouldBe connAckBitsSessionPresent.drop(4)
-//      ConnAckPacket.codec.decode(connAckBitsSessionPresent.drop(4)).require.value shouldBe connAckSessionPresent
-
       (0 to 5).foreach { n =>
         val msg = ConnAckPacket(session = false, n)
         val bits = connAckBits(sess = false, n).drop(4)
@@ -225,11 +201,17 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
     }
 
     "encode and decode SUBACK packets" in {
-      pending
+      val subAckBits = hex"90 05 11 22 00 01 80".bits
+      checkEncodeDecode(SubAckPacket.codec, SubAckPacket(0x1122, List(0, 1, 0x80)), subAckBits)
+
+      SubAckPacket.codec.decode(hex"d0 02 11 22".bits) shouldBe an [Attempt.Failure]
+
     }
 
     "encode and decode UNSUBSCRIBE packets" in {
-      pending
+      val topics = List("a/b", "c")
+      val pkt = hex"a2 0a 11 22 0003 612f62 0001 63".bits
+      checkEncodeDecode(UnsubPacket.codec, UnsubPacket(0x1122, topics), pkt)
     }
 
     "encode and decode UNSUBACK packets" in {

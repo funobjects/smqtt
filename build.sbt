@@ -14,7 +14,7 @@ resolvers ++= List(
 
 libraryDependencies ++= {
   object v {
-    val akka        = "2.3.9"
+    val akka        = "2.3.11"
     val paho        = "1.0.2"
     val scalatest   = "2.2.4"
     val scalactic   = "2.2.4"

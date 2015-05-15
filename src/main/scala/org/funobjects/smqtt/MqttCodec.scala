@@ -1,12 +1,11 @@
 package org.funobjects.smqtt
 
-import scodec.Err.General
+import org.scalactic.Accumulation._
+import org.scalactic.{Good, Bad, Or, Every}
 import scodec._
 import scodec.bits._
 import scodec.codecs._
 import shapeless.HNil
-
-import scala.annotation.tailrec
 
 
 /**
@@ -23,19 +22,17 @@ object MqttCodec {
   def apply = mqttCodec
 
   // filter for UTF "non-characters" and control characters
-  def badUtf(cp: Int): Boolean = { cp >= 1 && cp <= 0x1f || (cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xffff) == 0xffff }
+  //def badUtf(cp: Int): Boolean = { cp >= 1 && cp <= 0x1f || (cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xffff) == 0xffff }
 
-  def badUtfForTopic = ???
-  def badUtfForFilter = ???
-
-
-  case class MqttErr(protoRef: String, msg: String, context: List[String]) extends Err {
-    def this(protoRef: String, msg: String) = this(protoRef, msg, Nil)
-    override def message: String = s"$protoRef: $msg"
+  case class MqttErr(errors: Every[MqttError], context: List[String] = Nil) extends Err {
+    def refsString = errors.toList.map(_.ref).mkString(",")
+    def msgString = errors.toList.map(_.msg).mkString("; ")
+    override def message: String = s"$msgString Protocol Reference: $refsString"
     override def pushContext(ctx: String) = copy(context = ctx :: context)
   }
+  
   object MqttErr {
-    def apply(protoRef: String, msg: String): MqttErr = apply(protoRef, msg, Nil)
+    def apply(protoRef: String, msg: String): MqttErr = MqttErr(MqttError(protoRef, msg))
   }
 
   sealed trait ControlPacket {
@@ -112,7 +109,7 @@ object MqttCodec {
             ("password" | conditional(cf.hasPassword, vbytes))))))
       .dropUnits
       .as[ConnectPacket]
-      .exmap(conn => conn.validate, pkt => Attempt.Successful(pkt))
+      .exmap(conn => conn.validate, conn => conn.validate)
   }
 
   case class ConnAckPacket(session: Boolean, ret: Int) extends ControlPacket
@@ -130,24 +127,27 @@ object MqttCodec {
     packetId: Option[Int],
     payload: ByteVector) extends ControlPacket {
 
-    override def validate = this match {
-      case PublishPacket(f, _, _, _) if flags.qos == 3 =>
+    override def validate: Attempt[PublishPacket] = {
+      if (flags.qos == 3)
         Attempt.Failure(MqttErr("[MQTT-3.3.1-4]", s"Invalid QoS (${flags.qos}})"))
-
-      case PublishPacket(f, _, _, _) if flags.qos == 0 && flags.dup =>
+      else if (flags.qos == 0 && flags.dup)
         Attempt.Failure(MqttErr("[MQTT-3.3.1-2]", s"Dup flag set with QoS 0."))
-
-      case PublishPacket(f, _, pid, _) if f.qos == 0 && pid.isDefined =>
+      else if (flags.qos == 0 && packetId.isDefined)
         Attempt.Failure(MqttErr("[MQTT-2.3.1-5]", s"Packet ID present with QoS 0."))
-
-      case pkt: PublishPacket => Attempt.successful(pkt)
+      else {
+        Topic.topicLevels(topic) match {
+          case Good(_) => Attempt.successful(this)
+          case Bad(errs) => Attempt.failure(MqttErr(errs))
+        }
+      }
     }
   }
+
   object PublishPacket {
     val packetType = mqttPacketType(0x3)
 
     case class PublishFlags(dup: Boolean, qos: Int, retain: Boolean) {
-      def packetIdPresent = (qos == 1 || qos == 2)
+      def packetIdPresent: Boolean = qos == 1 || qos == 2
     }
 
     object PublishFlags {
@@ -163,7 +163,7 @@ object MqttCodec {
           ("packetId" | conditional(hdr.packetIdPresent, uint16)) ::
           ("payload" | bytes))))
       .as[PublishPacket]
-      .exmap(pub => pub.validate, pkt => Attempt.successful(pkt))
+      .exmap(pub => pub.validate, pub => pub.validate)
   }
 
   case class PubAckPacket(packetId: Int) extends ControlPacket
@@ -198,7 +198,15 @@ object MqttCodec {
     implicit val codec: Codec[PubCompPacket] = (constant(packetFlags) :: packetIdCodec).dropUnits.as[PubCompPacket]
   }
 
-  case class SubscribePacket(packetId: Int, filters: List[SubscribePacket.TopicFilter]) extends ControlPacket
+  case class SubscribePacket(packetId: Int, filters: List[SubscribePacket.TopicFilter]) extends ControlPacket {
+    override def validate: Attempt[SubscribePacket] = {
+      if (filters.size == 0)
+        Attempt.failure(MqttErr("[MQTT-3.8.3-3]", "Subscribe packet must contain at least one topic filter."))
+      else
+        Attempt.successful(this)
+    }
+
+  }
   object SubscribePacket {
     val packetType = mqttPacketType(0x8)
     val packetFlags = bin"0010"
@@ -215,7 +223,11 @@ object MqttCodec {
       constant(packetFlags) ::
       variableSizeBytes(vint28,
         ("packetId" | uint16) ::
-        ("filters" | list(TopicFilter.codec)))).dropUnits.as[SubscribePacket]
+        ("filters" | list(TopicFilter.codec))))
+        .dropUnits
+        .as[SubscribePacket]
+        .exmap(sub => sub.validate, sub => sub.validate)
+
   }
 
   case class SubAckPacket(packetId: Int, returnCodes: List[Int]) extends ControlPacket

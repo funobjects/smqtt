@@ -1,7 +1,5 @@
 package org.funobjects.smqtt
 
-import org.funobjects.smqtt.SomethingProto._
-
 import org.scalatest._
 import org.scalatest.prop.PropertyChecks
 import scodec.Attempt.Successful
@@ -137,6 +135,8 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
     "encode and decode PUBLISH packets" in {
       import PublishPacket.PublishFlags
 
+      checkEncodeDecode(PublishPacket.codec, publishMessage, publishBits)
+
       val allFlags = for (
         qos <- 0 to 2;
         dup <- List(true, false);
@@ -206,9 +206,22 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
     }
 
     "encode and decode SUBSCRIBE packets" in {
-      val topics = List("a/b", "c")
-      val topicBits = hex"0003 612f62 0001 63".bits
-      pending
+      import SubscribePacket.TopicFilter
+
+      val topics = List(
+        TopicFilter("a/b", 0),
+        TopicFilter("c", 1))
+      val subMsg = SubscribePacket(0x1122, topics)
+
+      val hd = hex"82 0c".bits
+      val pktId = hex"1122".bits
+      val topicListBits = hex"0003 612f62 00 0001 63 01".bits
+      val subMsgBits = hd ++ pktId ++ topicListBits
+
+      checkEncodeDecode(SubscribePacket.codec, subMsg, subMsgBits)
+
+      SubscribePacket.codec.encode(SubscribePacket(0x1122, List())) shouldBe an [Attempt.Failure]
+      SubscribePacket.codec.decode(hex"82 02 1122".bits) shouldBe an [Attempt.Failure]
     }
 
     "encode and decode SUBACK packets" in {
@@ -220,7 +233,7 @@ class MqttCodecSpec extends WordSpec with Matchers with PropertyChecks {
     }
 
     "encode and decode UNSUBACK packets" in {
-      pending
+      checkEncodeDecode(UnsubAckPacket.codec, UnsubAckPacket(0xaabb), hex"b0 02 aa bb".bits)
     }
 
     "encode and decode PINGREQ packets" in {
@@ -274,17 +287,17 @@ object MqttFixtures {
    *
    */
   val connectBits = hex"""
-  10 2e
-  00 04 4d 51 54 54
-  04
-  c6
-  00 00
-  00 08 63 6c 69 65 6e 74 69 64
-  00 06 2f 74 6f 70 69 63
-  00 04 11 22 33 44
-  00 04 75 73 65 72
-  00 04 70 61 73 73
-  """.bits
+    10 2e
+    00 04 4d 51 54 54
+    04
+    c6
+    00 00
+    00 08 63 6c 69 65 6e 74 69 64
+    00 06 2f 74 6f 70 69 63
+    00 04 11 22 33 44
+    00 04 75 73 65 72
+    00 04 70 61 73 73
+    """.bits
 
   val connectBitsBadLen = connectBits.dropRight(8)
 
@@ -304,4 +317,22 @@ object MqttFixtures {
 
   val pingRespBits = hex"d0 00".bits
   val pingRespMessage = PingRespPacket()
+
+  val publishFlag0 = bin"0000"
+  val publishFlagQos1 = bin"0010"
+  val publishFlagQos1Dup = bin"1010"
+  val publishFlagQos1DupRetain = bin"1011"
+
+  val publishBits = hex"""
+    32 0b
+    0003 612f62
+    1122
+    aabbccdd
+    """.bits
+
+  val publishMessage = PublishPacket(
+    flags = PublishPacket.PublishFlags(dup = false, qos = 1, retain = false),
+    topic = "a/b",
+    packetId = Some(0x1122),
+    payload = hex"aabbccdd")
 }

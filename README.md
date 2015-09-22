@@ -1,2 +1,2 @@
 # smqtt
-MQTT Broker based on Akka and scodec.
+Experimental MQTT codec based on scodec.
